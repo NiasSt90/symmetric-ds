@@ -40,6 +40,7 @@ public class InterbaseTriggerTemplate extends AbstractTriggerTemplate {
         oldTriggerValue = "old" ;
         oldColumnPrefix = "" ;
         newColumnPrefix = "" ;
+        booleanColumnTemplate = "case when $(tableAlias).\"$(columnName)\" is null then '' when $(tableAlias).\"$(columnName)\" = true then '\"1\"' else '\"0\"' end";
 
         sqlTemplates = new HashMap<String,String>();
         sqlTemplates.put("insertTriggerTemplate" ,
