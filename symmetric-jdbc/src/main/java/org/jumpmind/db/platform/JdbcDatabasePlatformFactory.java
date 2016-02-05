@@ -143,7 +143,7 @@ public class JdbcDatabasePlatformFactory {
      * @return The platform or <code>null</code> if the database is not
      * supported
      */
-    public static synchronized IDatabasePlatform createNewPlatformInstance(DataSource dataSource, SqlTemplateSettings settings, boolean delimitedIdentifierMode)
+    public static synchronized IDatabasePlatform createNewPlatformInstance(DataSource dataSource, SqlTemplateSettings settings, boolean delimitedIdentifierMode, boolean caseSensitive)
             throws DdlException {
 
         // connects to the database and uses actual metadata info to get db name
@@ -157,6 +157,7 @@ public class JdbcDatabasePlatformFactory {
             IDatabasePlatform platform = construtor.newInstance(dataSource, settings);
             log.info("The IDatabasePlatform being used is " + platform.getClass().getCanonicalName());
             platform.getDdlBuilder().setDelimitedIdentifierModeOn(delimitedIdentifierMode);
+            platform.getDdlBuilder().setCaseSensitive(caseSensitive);
             return platform;
         } catch (Exception e) {
             throw new DdlException("Could not create a platform of type " + nameVersion[0], e);
@@ -229,7 +230,9 @@ public class JdbcDatabasePlatformFactory {
             }
 
             if (nameVersion[0].toLowerCase().indexOf(DatabaseNamesConstants.DB2) != -1) {
-                if (nameVersion[0].toUpperCase().indexOf("Z") != -1) {
+                String productVersion = getDatabaseProductVersion(dataSource);
+                if (nameVersion[0].toUpperCase().indexOf("Z") != -1
+                        || (productVersion != null && productVersion.startsWith("DSN"))) {
                     nameVersion[0] = DatabaseNamesConstants.DB2ZOS;
                 } else if (nameVersion[0].indexOf("400") != -1) {
                     nameVersion[0] = DatabaseNamesConstants.DB2AS400;
@@ -301,11 +304,15 @@ public class JdbcDatabasePlatformFactory {
         try {
             DatabaseMetaData dmd = connection.getMetaData();
             dmd.getMaxColumnsInIndex();
+            if (dmd.getDriverName().toUpperCase().contains("REDSHIFT")) {
+            	isRedshift = true;
+            }
         } catch (SQLException ex) {
             if (ex.getSQLState().equals("99999")) {
                 isRedshift = true;
             }
         }
+        
         return isRedshift;
     }
 

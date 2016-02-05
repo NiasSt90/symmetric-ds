@@ -21,7 +21,9 @@
 package org.jumpmind.symmetric.route;
 
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.jumpmind.db.sql.ISqlTemplate;
 import org.jumpmind.db.sql.ISqlTransaction;
@@ -91,12 +93,13 @@ public class DataGapDetector {
             final int dataIdIncrementBy = parameterService
                     .getInt(ParameterConstants.DATA_ID_INCREMENT_BY);
             final long maxDataToSelect = parameterService
-                    .getInt(ParameterConstants.ROUTING_LARGEST_GAP_SIZE);
+                    .getLong(ParameterConstants.ROUTING_LARGEST_GAP_SIZE);
             long databaseTime = symmetricDialect.getDatabaseTime();
             int idsFilled = 0;
             int newGapsInserted = 0;
             int rangeChecked = 0;
             int gapsDeleted = 0;
+            Set<DataGap> gapCheck = new HashSet<DataGap>(gaps);
             for (final DataGap dataGap : gaps) {
                 final boolean lastGap = dataGap.equals(gaps.get(gaps.size() - 1));
                 String sql = routerService.getSql("selectDistinctDataIdFromDataEventUsingGapsSql");
@@ -123,11 +126,19 @@ public class DataGapDetector {
                         processInfo.incrementCurrentDataCount();
                         if (lastDataId == -1 && dataGap.getStartId() + dataIdIncrementBy <= dataId) {
                             // there was a new gap at the start
-                            dataService.insertDataGap(transaction, new DataGap(dataGap.getStartId(), dataId - 1));
+                            DataGap newGap = new DataGap(dataGap.getStartId(), dataId - 1);
+                            if (!gapCheck.contains(newGap)) {
+                                dataService.insertDataGap(transaction, newGap);
+                                gapCheck.add(newGap);
+                            }
                             newGapsInserted++;
                         } else if (lastDataId != -1 && lastDataId + dataIdIncrementBy != dataId && lastDataId != dataId) {
                             // found a gap somewhere in the existing gap
-                            dataService.insertDataGap(transaction, new DataGap(lastDataId + 1, dataId - 1));
+                            DataGap newGap = new DataGap(lastDataId + 1, dataId - 1);
+                            if (!gapCheck.contains(newGap)) {
+                                dataService.insertDataGap(transaction, newGap);
+                                gapCheck.add(newGap);
+                            }
                             newGapsInserted++;
                         }
                         lastDataId = dataId;
@@ -136,7 +147,11 @@ public class DataGapDetector {
                     // if we found data in the gap
                     if (lastDataId != -1) {
                         if (!lastGap && lastDataId + dataIdIncrementBy <= dataGap.getEndId()) {
-                            dataService.insertDataGap(transaction, new DataGap(lastDataId + dataIdIncrementBy, dataGap.getEndId()));
+                            DataGap newGap = new DataGap(lastDataId + dataIdIncrementBy, dataGap.getEndId());
+                            if (!gapCheck.contains(newGap)) {
+                                dataService.insertDataGap(transaction, newGap);
+                                gapCheck.add(newGap);
+                            }
                             newGapsInserted++;
                         }
 
@@ -150,7 +165,7 @@ public class DataGapDetector {
                             if (symmetricDialect.supportsTransactionViews()) {
                                 long transactionViewClockSyncThresholdInMs = parameterService.getLong(
                                         ParameterConstants.DBDIALECT_ORACLE_TRANSACTION_VIEW_CLOCK_SYNC_THRESHOLD_MS, 60000);
-                                Date createTime = dataService.findCreateTimeOfData(dataGap.getEndId() + 1);
+                                Date createTime = dataGap.getCreateTime();
                                 if (createTime != null
                                         && !symmetricDialect.areDatabaseTransactionsPendingSince(createTime.getTime()
                                                 + transactionViewClockSyncThresholdInMs)) {
@@ -169,7 +184,7 @@ public class DataGapDetector {
                                         gapsDeleted++;
                                     }
                                 }
-                            } else if (isDataGapExpired(dataGap.getEndId() + 1, databaseTime)) {
+                            } else if (isDataGapExpired(dataGap, databaseTime)) {
                                 if (dataGap.getStartId() == dataGap.getEndId()) {
                                     log.info("Found a gap in data_id at {}.  Skipping it because the gap expired", dataGap.getStartId());
                                 } else {
@@ -209,8 +224,12 @@ public class DataGapDetector {
             }
 
             if (lastDataId != -1) {
-                dataService
-                        .insertDataGap(new DataGap(lastDataId + 1, lastDataId + maxDataToSelect));
+                DataGap newGap = new DataGap(lastDataId + 1, lastDataId + maxDataToSelect);
+                if (!gapCheck.contains(newGap)) {
+                    dataService.insertDataGap(newGap);
+                    gapCheck.add(newGap);
+                }
+
             }
 
             long updateTimeInMs = System.currentTimeMillis() - ts;
@@ -225,13 +244,11 @@ public class DataGapDetector {
 
     }
 
-    protected boolean isDataGapExpired(long dataId, long databaseTime) {
+    protected boolean isDataGapExpired(DataGap dataGap, long databaseTime) {
         long gapTimoutInMs = parameterService
                 .getLong(ParameterConstants.ROUTING_STALE_DATA_ID_GAP_TIME);
-        Date createTime = dataService.findCreateTimeOfData(dataId);
-        if (createTime == null) {
-            createTime = dataService.findNextCreateTimeOfDataStartingAt(dataId);
-        }        
+
+        Date createTime = dataGap.getCreateTime();
         if (createTime != null && databaseTime - createTime.getTime() > gapTimoutInMs) {
             return true;
         } else {

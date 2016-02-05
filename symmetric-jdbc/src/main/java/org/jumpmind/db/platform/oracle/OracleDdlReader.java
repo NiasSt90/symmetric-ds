@@ -39,6 +39,7 @@ import java.util.regex.Pattern;
 
 import org.apache.commons.lang.StringUtils;
 import org.jumpmind.db.model.Column;
+import org.jumpmind.db.model.ColumnTypes;
 import org.jumpmind.db.model.IIndex;
 import org.jumpmind.db.model.Table;
 import org.jumpmind.db.model.TypeMap;
@@ -119,6 +120,12 @@ public class OracleDdlReader extends AbstractJdbcDdlReader {
                 && !typeName.endsWith("TIME ZONE")) {
             // This is for Oracle's TIMESTAMP(9)
             return Types.TIMESTAMP;
+        } else if (typeName != null && typeName.startsWith("TIMESTAMP")
+                && typeName.endsWith("WITH TIME ZONE")) {
+            return ColumnTypes.ORACLE_TIMESTAMPTZ;
+        } else if (typeName != null && typeName.startsWith("TIMESTAMP")
+                && typeName.endsWith("WITH LOCAL TIME ZONE")) {
+            return ColumnTypes.ORACLE_TIMESTAMPLTZ;
         } else if (typeName != null && typeName.startsWith("NVARCHAR")) {
             // This is for Oracle's NVARCHAR type
             return Types.VARCHAR;
@@ -136,6 +143,8 @@ public class OracleDdlReader extends AbstractJdbcDdlReader {
             return Types.DOUBLE;
         } else if (typeName != null && typeName.startsWith("BFILE")) {
             return Types.VARCHAR;
+        } else if (typeName != null && typeName.startsWith("INTERVAL")) {
+            return Types.VARCHAR;            
         } else {
             return super.mapUnknownJdbcTypeForColumn(values);
         }
@@ -360,11 +369,11 @@ public class OracleDdlReader extends AbstractJdbcDdlReader {
                     values.put("ORDINAL_POSITION", new Short(rs.getShort(5)));
 
                     readIndex(metaData, values, indices);
-                } else {
-                    log.warn("Skipping index " + name + " of type " + type);
+                } else if (log.isDebugEnabled()) {
+                    log.debug("Skipping index " + name + " of type " + type);
                 }
             }
-            
+
             rs.close();
         } finally {
             if (stmt != null) {

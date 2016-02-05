@@ -59,8 +59,8 @@ public abstract class WrapperService {
         return instance;
     }
 
-    public void loadConfig(String configFile) throws IOException {
-        config = new WrapperConfig(configFile);
+    public void loadConfig(String applHomeDir, String configFile, String jarFile) throws IOException {
+        config = new WrapperConfig(applHomeDir, configFile, jarFile);
         setWorkingDirectory(config.getWorkingDirectory().getAbsolutePath());        
     }
 
@@ -171,6 +171,7 @@ public abstract class WrapperService {
                 startCount++;
             } else {
                 try {
+                    logger.log(Level.INFO, "Watching output of java process");
                     childReader = new BufferedReader(new InputStreamReader(child.getInputStream()));
                     String line = null;
 
@@ -190,11 +191,13 @@ public abstract class WrapperService {
                             restartDetected = true;
                         }
                     }
+                    logger.log(Level.INFO, "End of output from java process");
                 } catch (IOException e) {
                     logger.log(Level.SEVERE, "Error while reading from process");
                 }
 
                 if (restartDetected) {
+                    logger.log(Level.INFO, "Restart detected");
                     restartDetected = false;
                     startProcess = true;
                 } else if (keepRunning) {
@@ -304,7 +307,7 @@ public abstract class WrapperService {
         ArrayList<String> cmd = new ArrayList<String>();
         String quote = getWrapperCommandQuote();
         cmd.add(quote + config.getJavaCommand() + quote);
-        cmd.addAll(config.getOptions());
+        cmd.add("-Djava.io.tmpdir="+quote+System.getProperty("java.io.tmpdir")+quote);
         cmd.add("-jar");
         cmd.add(quote + config.getWrapperJarPath() + quote);
         cmd.add(arg);

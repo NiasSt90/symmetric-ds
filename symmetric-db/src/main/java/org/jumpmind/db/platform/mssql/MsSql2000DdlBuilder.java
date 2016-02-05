@@ -246,14 +246,20 @@ public class MsSql2000DdlBuilder extends AbstractDdlBuilder {
     @Override
     protected String getNativeDefaultValue(Column column) {
         // Sql Server wants BIT default values as 0 or 1
-        if ((column.getMappedTypeCode() == Types.BIT)
-                || (PlatformUtils.supportsJava14JdbcTypes() && (column.getMappedTypeCode() == PlatformUtils
-                        .determineBooleanTypeCode()))) {
-            return getDefaultValueHelper().convert(column.getDefaultValue(),
-                    column.getMappedTypeCode(), Types.SMALLINT).toString();
-        } else {
-            return super.getNativeDefaultValue(column);
-        }
+		if ((column.getMappedTypeCode() == Types.BIT)
+				|| (PlatformUtils.supportsJava14JdbcTypes() && (column
+						.getMappedTypeCode() == PlatformUtils
+						.determineBooleanTypeCode()))) {
+			return getDefaultValueHelper().convert(column.getDefaultValue(),
+					column.getMappedTypeCode(), Types.SMALLINT).toString();
+		}
+		if ((column.getMappedTypeCode() == Types.TIMESTAMP) || (column.getMappedTypeCode() == Types.TIME) || (column.getMappedTypeCode() == Types.DATE)) {
+		    String defaultValue = super.getNativeDefaultValue(column);
+		    if (defaultValue != null && (defaultValue.equalsIgnoreCase("CURRENT_DATE") || defaultValue.equalsIgnoreCase("CURRENT DATE"))) {
+		        return "CURRENT_TIMESTAMP";
+		    }
+		}
+		return super.getNativeDefaultValue(column);
     }
 
     @Override
@@ -739,6 +745,22 @@ public class MsSql2000DdlBuilder extends AbstractDdlBuilder {
         int identityIndex = sqlType.indexOf("identity");
         if (identityIndex > 0) {
             sqlType.replace(identityIndex, sqlType.length(), "");
+        }
+        if (sqlType.indexOf("datetimeoffset") >= 0) {
+            sqlType.setLength(0);
+            sqlType.append("datetimeoffset");
+        } else if (sqlType.toString().equalsIgnoreCase("varchar")) {
+            sqlType.setLength(0);
+            sqlType.append("varchar(max)");
+        } else if (sqlType.toString().equalsIgnoreCase("varbinary")) {
+            sqlType.setLength(0);
+            sqlType.append("varbinary(max)");
+        } else if (sqlType.toString().equalsIgnoreCase("nvarchar")) {
+            sqlType.setLength(0);
+            sqlType.append("nvarchar(max)");
+        } else if (sqlType.toString().equalsIgnoreCase("nvarbinary")) {
+            sqlType.setLength(0);
+            sqlType.append("nvarbinary(max)");            
         }
     }
 }

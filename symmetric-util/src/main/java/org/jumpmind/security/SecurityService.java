@@ -59,13 +59,53 @@ public class SecurityService implements ISecurityService {
 
     public void init() {
     }
-
+    
+    @Override
+    public KeyStore getTrustStore() {
+        try {
+            String keyStoreType = System.getProperty(SecurityConstants.SYSPROP_KEYSTORE_TYPE,
+                    SecurityConstants.KEYSTORE_TYPE);
+            KeyStore ks = KeyStore.getInstance(keyStoreType);
+            FileInputStream is = new FileInputStream(
+                    System.getProperty(SecurityConstants.SYSPROP_TRUSTSTORE));
+            String password = System.getProperty(SecurityConstants.SYSPROP_TRUSTSTORE_PASSWORD);            
+            ks.load(is, password != null ? password.toCharArray() : null);
+            is.close();
+            return ks;
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+    
+    @Override
+    public KeyStore getKeyStore() {
+        try {
+            String keyStoreType = System.getProperty(SecurityConstants.SYSPROP_KEYSTORE_TYPE,
+                    SecurityConstants.KEYSTORE_TYPE);
+            KeyStore ks = KeyStore.getInstance(keyStoreType);
+            FileInputStream is = new FileInputStream(
+                    System.getProperty(SecurityConstants.SYSPROP_KEYSTORE));
+            ks.load(is, getKeyStorePassword().toCharArray());
+            is.close();
+            return ks;
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+    
     public void installDefaultSslCert(String host) {
         throw new NotImplementedException();
     }
 
     protected void checkThatKeystoreFileExists() {
         String keyStoreLocation = System.getProperty(SecurityConstants.SYSPROP_KEYSTORE);
+        if (keyStoreLocation == null) {
+            throw new RuntimeException("System property '" + SecurityConstants.SYSPROP_KEYSTORE + "' is not defined.");
+        }
         if (!new File(keyStoreLocation).exists()) {
             throw new IoException(
                     "Could not find the keystore file.  We expected it to exist here: "
@@ -135,7 +175,7 @@ public class SecurityService implements ISecurityService {
     protected SecretKey getSecretKey() throws Exception {
         String password = getKeyStorePassword();
         KeyStore.ProtectionParameter param = new KeyStore.PasswordProtection(password.toCharArray());
-        KeyStore ks = getKeyStore(password);
+        KeyStore ks = getKeyStore();
         KeyStore.SecretKeyEntry entry = (KeyStore.SecretKeyEntry) ks.getEntry(
                 SecurityConstants.ALIAS_SYM_SECRET_KEY, param);
         if (entry == null) {
@@ -195,17 +235,6 @@ public class SecurityService implements ISecurityService {
         SecretKey secretKey = SecretKeyFactory.getInstance(SecurityConstants.ALGORITHM)
                 .generateSecret(keySpec);
         return secretKey;
-    }
-
-    protected KeyStore getKeyStore(String password) throws Exception {
-        String keyStoreType = System.getProperty(SecurityConstants.SYSPROP_KEYSTORE_TYPE,
-                SecurityConstants.KEYSTORE_TYPE);
-        KeyStore ks = KeyStore.getInstance(keyStoreType);
-        FileInputStream is = new FileInputStream(
-                System.getProperty(SecurityConstants.SYSPROP_KEYSTORE));
-        ks.load(is, password.toCharArray());
-        is.close();
-        return ks;
     }
 
     protected void saveKeyStore(KeyStore ks, String password) throws Exception {
