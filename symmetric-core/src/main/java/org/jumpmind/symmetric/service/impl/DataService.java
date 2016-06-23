@@ -54,7 +54,7 @@ import org.jumpmind.symmetric.io.data.Batch;
 import org.jumpmind.symmetric.io.data.CsvData;
 import org.jumpmind.symmetric.io.data.CsvUtils;
 import org.jumpmind.symmetric.io.data.DataEventType;
-import org.jumpmind.symmetric.io.data.transform.TransformTable;
+import org.jumpmind.symmetric.io.data.reader.TableExtractDataReaderSource;
 import org.jumpmind.symmetric.job.PushHeartbeatListener;
 import org.jumpmind.symmetric.load.IReloadListener;
 import org.jumpmind.symmetric.model.Channel;
@@ -633,8 +633,17 @@ public class DataService extends AbstractService implements IDataService {
                                     .replace("externalId", targetNode.getExternalId(), sql);
                             sql = FormatUtils.replace("nodeId", targetNode.getNodeId(), sql);
                             int rowCount = sqlTemplate.queryForInt(sql);
+                            int transformMultiplier = 0;
+                            for (TransformService.TransformTableNodeGroupLink transform : engine.getTransformService().getTransformTables(false)) {
+                            	if (triggerRouter.getRouter().getNodeGroupLink().equals(transform.getNodeGroupLink()) && 
+                            			transform.getSourceTableName().equals(table.getName())) {
+                            		transformMultiplier++;
+                            	}
+                            }
+                            if (transformMultiplier == 0) { transformMultiplier = 1; }
+                            
                             if (rowCount > 0) {
-                                numberOfBatches = (rowCount / channel.getMaxBatchSize()) + 1;
+                                numberOfBatches = (rowCount * transformMultiplier / channel.getMaxBatchSize()) + 1;
                             } else {
                                 numberOfBatches = 1;
                             }
@@ -1258,7 +1267,7 @@ public class DataService extends AbstractService implements IDataService {
         ISqlTransaction transaction = null;
         try {
             transaction = sqlTemplate.startSqlTransaction();
-            String tableName = TableConstants.getTableName(tablePrefix, TableConstants.SYM_NODE);
+            String tableName = TableConstants.getTableName(tablePrefix, TableConstants.SYM_NODE_HOST);
             List<NodeGroupLink> links = engine.getConfigurationService().getNodeGroupLinksFor(
                     parameterService.getNodeGroupId(), false);
             for (NodeGroupLink nodeGroupLink : links) {
@@ -1407,7 +1416,9 @@ public class DataService extends AbstractService implements IDataService {
             if (maxDataEventId > 0) {
                 maxDataEventId++;
             }
-            insertDataGap(new DataGap(maxDataEventId, maxDataEventId + maxDataToSelect));
+            DataGap gap = new DataGap(maxDataEventId, maxDataEventId + maxDataToSelect);
+            insertDataGap(gap);
+            log.info("Inserting last data gap: {}", gap);
             gaps = findDataGaps();
         }
         return gaps;

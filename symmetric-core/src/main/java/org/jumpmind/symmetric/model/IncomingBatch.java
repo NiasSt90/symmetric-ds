@@ -33,7 +33,7 @@ public class IncomingBatch implements Serializable {
     private static final long serialVersionUID = 1L;
 
     public enum Status {
-       OK("Ok"), ER("Error"), LD("Loading"), IG("Ignored");
+       OK("Ok"), ER("Error"), LD("Loading"), IG("Ignored"), XX("Unknown");
 
         private String description;
 
@@ -128,6 +128,16 @@ public class IncomingBatch implements Serializable {
             }
         }
     }
+    
+    public void setNodeBatchId(String value) {
+        if (value != null) {
+            int splitIndex = value.indexOf("-");
+            if (splitIndex > 0) {
+                nodeId = value.substring(0, splitIndex);
+                batchId = Long.parseLong(value.substring(splitIndex+1));
+            }
+        }
+    }
 
     public String getNodeBatchId() {
         return nodeId + "-" + batchId;
@@ -147,6 +157,14 @@ public class IncomingBatch implements Serializable {
 
     public void setStatus(Status status) {
         this.status = status;
+    }
+
+    public void setStatus(String status) {
+        try {
+            this.status = Status.valueOf(status);
+        } catch (IllegalArgumentException e) {
+            this.status = Status.XX;
+        }
     }
 
     public String getNodeId() {

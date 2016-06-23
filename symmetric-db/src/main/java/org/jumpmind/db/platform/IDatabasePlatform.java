@@ -114,6 +114,10 @@ public interface IDatabasePlatform {
 
     public DmlStatement createDmlStatement(DmlType dmlType, String catalogName, String schemaName,
             String tableName, Column[] keys, Column[] columns, boolean[] nullKeyValues, String textColumnExpression);
+    
+    public DmlStatement createDmlStatement(DmlType dmlType, String catalogName, String schemaName,
+            String tableName, Column[] keys, Column[] columns, boolean[] nullKeyValues, String textColumnExpression, 
+            boolean namedParameters);    
 
     public Object[] getObjectValues(BinaryEncoding encoding, String[] values,
             Column[] orderedMetaData);
@@ -170,6 +174,8 @@ public interface IDatabasePlatform {
     public boolean isMetadataIgnoreCase();
 
     public java.util.Date parseDate(int type, String value, boolean useVariableDates);
+    
+    public Map<String, String> parseQualifiedTableName(String tableName);
 
     public Table makeAllColumnsPrimaryKeys(Table table);
     

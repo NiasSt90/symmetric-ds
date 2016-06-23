@@ -104,6 +104,7 @@ import org.jumpmind.symmetric.model.Router;
 import org.jumpmind.symmetric.model.Trigger;
 import org.jumpmind.symmetric.model.TriggerHistory;
 import org.jumpmind.symmetric.model.TriggerRouter;
+import org.jumpmind.symmetric.route.AbstractFileParsingRouter;
 import org.jumpmind.symmetric.route.SimpleRouterContext;
 import org.jumpmind.symmetric.service.ClusterConstants;
 import org.jumpmind.symmetric.service.IClusterService;
@@ -371,8 +372,10 @@ public class DataExtractorService extends AbstractService implements IDataExtrac
 
         // Remove non-load batches so that an initial load finishes before
         // any other batches are loaded.
-        if (!batches.containsBatchesInError() && batches.containsLoadBatches()) {
-            batches.removeNonLoadBatches();
+        if (parameterService.is(ParameterConstants.INITIAL_LOAD_BLOCK_CHANNELS, true)) {
+            if (!batches.containsBatchesInError() && batches.containsLoadBatches()) {
+                batches.removeNonLoadBatches();
+            }
         }
 
         return batches.getBatches();
@@ -1143,8 +1146,15 @@ public class DataExtractorService extends AbstractService implements IDataExtrac
 
                     if (!areBatchesOk) {
                         for (OutgoingBatch outgoingBatch : batches) {
-                            outgoingBatch.setStatus(Status.NE);
-                            outgoingBatchService.updateOutgoingBatch(transaction, outgoingBatch);
+                            if (parameterService.is(ParameterConstants.INITIAL_LOAD_EXTRACT_AND_SEND_WHEN_STAGED, false)) {
+                            	if (outgoingBatch.getStatus() == Status.RQ) {
+                            		outgoingBatch.setStatus(Status.NE);
+                                	outgoingBatchService.updateOutgoingBatch(transaction, outgoingBatch);
+                            	}
+                            } else {
+                            	outgoingBatch.setStatus(Status.NE);
+                            	outgoingBatchService.updateOutgoingBatch(transaction, outgoingBatch);
+                            }
                         }
                     } else {
                         log.info("Batches already had an OK status for request {}, batches {} to {}.  Not updating the status to NE", new Object[] { request.getRequestId(), request.getStartBatchId(),
@@ -1269,12 +1279,39 @@ public class DataExtractorService extends AbstractService implements IDataExtrac
                 Statistics stats = this.currentDataWriter.getStatistics().get(batch);
                 this.outgoingBatch.setByteCount(stats.get(DataWriterStatisticConstants.BYTECOUNT));
                 this.outgoingBatch.setExtractMillis(System.currentTimeMillis() - batch.getStartTime().getTime());
-                this.currentDataWriter.close();                
+                this.currentDataWriter.close();   
+                checkSend();
                 startNewBatch();
             }
 
         }
 
+        public void checkSend() {
+        	if (parameterService.is(ParameterConstants.INITIAL_LOAD_EXTRACT_AND_SEND_WHEN_STAGED, false)) {
+        		this.outgoingBatch.setStatus(Status.NE);
+            	ISqlTransaction transaction = null;
+                try {
+                    transaction = sqlTemplate.startSqlTransaction();
+                    outgoingBatchService.updateOutgoingBatch(transaction, this.outgoingBatch);
+                    transaction.commit();
+                } catch (Error ex) {
+                    if (transaction != null) {
+                        transaction.rollback();
+                    }
+                    throw ex;
+                } catch (RuntimeException ex) {
+                    if (transaction != null) {
+                        transaction.rollback();
+                    }
+                    throw ex;
+                } finally {
+                	if (transaction != null) {
+                        transaction.close();
+                    }
+                }
+            }
+        }
+        
         public void end(Table table) {
             if (this.currentDataWriter != null) {
                 this.currentDataWriter.end(table);
@@ -1426,7 +1463,7 @@ public class DataExtractorService extends AbstractService implements IDataExtrac
                     } else {
                         Trigger trigger = triggerRouterService.getTriggerById(
                                 triggerHistory.getTriggerId(), false);
-                        if (trigger != null) {
+                        if (trigger != null || triggerHistory.getTriggerId().equals(AbstractFileParsingRouter.TRIGGER_ID_FILE_PARSER)) {
                             if (lastTriggerHistory == null || lastTriggerHistory
                                     .getTriggerHistoryId() != triggerHistory.getTriggerHistoryId() || 
                                     lastRouterId == null || !lastRouterId.equals(routerId)) {
@@ -1434,7 +1471,7 @@ public class DataExtractorService extends AbstractService implements IDataExtrac
                                         routerId, triggerHistory, false, true);
                                 this.targetTable = lookupAndOrderColumnsAccordingToTriggerHistory(
                                         routerId, triggerHistory, true, false);
-                                this.requiresLobSelectedFromSource = trigger.isUseStreamLobs();
+                                this.requiresLobSelectedFromSource = trigger == null ? false : trigger.isUseStreamLobs();
                             }
 
                             data.setNoBinaryOldData(requiresLobSelectedFromSource
@@ -1689,8 +1726,8 @@ public class DataExtractorService extends AbstractService implements IDataExtrac
                         return data;
                     } else {
                         throw new SymmetricException(
-                                "The extracted row data did not have the expected (%d) number of columns: %s.  The initial load sql was: %s",
-                                expectedCommaCount, csvRow, initialLoadSql);
+                                "The extracted row data did not have the expected (%d) number of columns (actual=%s): %s.  The initial load sql was: %s",
+                                expectedCommaCount, commaCount, csvRow, initialLoadSql);
                     }
                 }
             });

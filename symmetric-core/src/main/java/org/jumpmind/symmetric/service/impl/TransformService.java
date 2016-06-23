@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.jumpmind.db.sql.ISqlRowMapper;
 import org.jumpmind.db.sql.ISqlTransaction;
@@ -94,7 +95,7 @@ public class TransformService extends AbstractService implements ITransformServi
         addColumnTransform(LookupColumnTransform.NAME, new LookupColumnTransform());
         addColumnTransform(BshColumnTransform.NAME, new BshColumnTransform(parameterService));
         addColumnTransform(AdditiveColumnTransform.NAME, new AdditiveColumnTransform());
-        addColumnTransform(JavaColumnTransform.NAME, new JavaColumnTransform());
+        addColumnTransform(JavaColumnTransform.NAME, new JavaColumnTransform(extensionService));
         addColumnTransform(ConstantColumnTransform.NAME, new ConstantColumnTransform());
         addColumnTransform(CopyColumnTransform.NAME, new CopyColumnTransform());
         addColumnTransform(IdentityColumnTransform.NAME, new IdentityColumnTransform());
@@ -179,19 +180,21 @@ public class TransformService extends AbstractService implements ITransformServi
         
         List<TransformTableNodeGroupLink> transformsForNodeGroupLink = findTransformsFor(nodeGroupLink);
         
-        List<TransformTableNodeGroupLink> transforms = new ArrayList<TransformTableNodeGroupLink>();
-        
-        for (TransformTableNodeGroupLink transform : transformsForNodeGroupLink) {
-            if (StringUtils.equalsIgnoreCase(table, transform.getSourceTableName())) {
-                transforms.add(transform);
+        if (!CollectionUtils.isEmpty(transformsForNodeGroupLink)) {            
+            List<TransformTableNodeGroupLink> transforms = new ArrayList<TransformTableNodeGroupLink>();
+            
+            for (TransformTableNodeGroupLink transform : transformsForNodeGroupLink) {
+                if (StringUtils.equalsIgnoreCase(table, transform.getSourceTableName())) {
+                    transforms.add(transform);
+                }
             }
+            
+            if (!transforms.isEmpty()) {
+                return transforms;
+            } 
         }
         
-        if (!transforms.isEmpty()) {
-            return transforms;
-        } else {            
-            return null;
-        }
+        return null;
     }
 
     public void clearCache() {

@@ -30,6 +30,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.commons.lang.StringUtils;
 import org.jumpmind.db.sql.ISqlRowMapper;
@@ -64,7 +65,7 @@ public class NodeService extends AbstractService implements INodeService {
     private IExtensionService extensionService;
 
     private Node cachedNodeIdentity;
-
+    
     private Map<String, NodeSecurity> securityCache;
 
     private long securityCacheTime;
@@ -126,10 +127,17 @@ public class NodeService extends AbstractService implements INodeService {
      * with it.
      */
     public Node findNode(String id) {
-        List<Node> list = sqlTemplate.query(getSql("selectNodePrefixSql", "findNodeSql"),
-                new NodeRowMapper(), id);
-        return (Node) getFirstEntry(list);
+        return findAllNodesAsMap().get(id);
     }
+    
+    public String getExternalId(String nodeId) {
+        Node node = findNode(nodeId);
+        String externalId = "";
+        if (node != null) {
+            externalId = node.getExternalId();
+        }
+        return externalId;
+    }    
 
     public Node findNodeByExternalId(String nodeGroupId, String externalId) {
         List<Node> list = sqlTemplate.query(
@@ -447,7 +455,8 @@ public class NodeService extends AbstractService implements INodeService {
     }
 
     public List<Node> findAllNodes() {
-        return sqlTemplate.query(getSql("selectNodePrefixSql"), new NodeRowMapper());
+        List<Node> nodeList = sqlTemplate.query(getSql("selectNodePrefixSql"), new NodeRowMapper());
+        return nodeList;
     }
 
     public Map<String, Node> findAllNodesAsMap() {

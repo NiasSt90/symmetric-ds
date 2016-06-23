@@ -32,11 +32,17 @@ public class SecurityConstants {
     
     public static final String SYSPROP_TRUSTSTORE_PASSWORD = "javax.net.ssl.trustStorePassword";
 
-    public static final String SYSPROP_KEYSTORE_PASSWORD = "javax.net.ssl.keyStorePassword";    
+    public static final String SYSPROP_KEYSTORE_PASSWORD = "javax.net.ssl.keyStorePassword";  
+    
+    public static final String SYSPROP_SSL_IGNORE_PROTOCOLS = "symmetric.ssl.ignore.protocols";
+    
+    public static final String SYSPROP_SSL_IGNORE_CIPHERS = "symmetric.ssl.ignore.ciphers";
     
     public final static String CLASS_NAME_SECURITY_SERVICE = "security.service.class.name";
    
     public static final String PREFIX_ENC = "enc:";
+    
+    public static final String PREFIX_OBF = "obf:";
 
     public static final String ALGORITHM = System.getProperty("sym.secret.key.defalt.algorithm","PBEWithMD5AndDES");
 

@@ -22,7 +22,7 @@
 @echo off
 
 pushd %~dp0..
-for /f "delims=" %%i in ('cd') do set SYM_HOME=%%i
+for /f "delims=" %%i in ('echo %CD%') do set SYM_HOME=%%i
 popd
 
 set SYM_OPTIONS=-Dfile.encoding=utf-8 ^
@@ -32,6 +32,7 @@ set SYM_OPTIONS=-Dfile.encoding=utf-8 ^
 -Dorg.eclipse.jetty.server.Request.maxFormKeys=100000 ^
 -Dsym.keystore.file="%SYM_HOME%\security\keystore" ^
 -Djavax.net.ssl.trustStore="%SYM_HOME%\security\cacerts" ^
+-Djavax.net.ssl.keyStorePassword=changeit ^
 -Dlog4j.configuration="file:%SYM_HOME%\conf\log4j.xml" ^
 -Dsun.net.client.defaultReadTimeout=1800000 ^
 -Dsun.net.client.defaultConnectTimeout=1800000 ^

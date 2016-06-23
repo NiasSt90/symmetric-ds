@@ -34,10 +34,12 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.regex.Pattern;
 
 import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Base64;
@@ -112,16 +114,29 @@ public abstract class AbstractDatabasePlatform implements IDatabasePlatform {
     abstract public ISqlTemplate getSqlTemplate();
 
     public DmlStatement createDmlStatement(DmlType dmlType, Table table, String textColumnExpression) {
+        
         return createDmlStatement(dmlType, table.getCatalog(), table.getSchema(), table.getName(),
                 table.getPrimaryKeyColumns(), table.getColumns(), null, textColumnExpression);
     }
 
     public DmlStatement createDmlStatement(DmlType dmlType, String catalogName, String schemaName,
             String tableName, Column[] keys, Column[] columns, boolean[] nullKeyValues, String textColumnExpression) {
+        
         return DmlStatementFactory.createDmlStatement(getName(), dmlType, catalogName, schemaName,
                 tableName, keys, columns, nullKeyValues, getDdlBuilder(), textColumnExpression);
     }
 
+    public DmlStatement createDmlStatement(DmlType dmlType, String catalogName, String schemaName,
+            String tableName, Column[] keys, Column[] columns, boolean[] nullKeyValues, String textColumnExpression,
+            boolean namedParameters) {
+
+        return DmlStatementFactory.createDmlStatement(getName(), dmlType, catalogName, schemaName,
+                tableName, keys, columns, nullKeyValues, getDdlBuilder(), textColumnExpression,
+                namedParameters);
+
+    }
+    
+    
     public IDdlReader getDdlReader() {
         return ddlReader;
     }
@@ -391,7 +406,9 @@ public abstract class AbstractDatabasePlatform implements IDatabasePlatform {
                 objectValue = parseBigInteger(value);
             } else if (type == Types.INTEGER || type == Types.SMALLINT || type == Types.BIT || type == Types.TINYINT) {
                 objectValue = parseInteger(value);
-            } else if (type == Types.NUMERIC || type == Types.DECIMAL || type == Types.FLOAT
+            } else if (type == Types.FLOAT) {
+                objectValue = parseFloat(value);
+            } else if (type == Types.NUMERIC || type == Types.DECIMAL
                     || type == Types.DOUBLE || type == Types.REAL) {
                 objectValue = parseBigDecimal(value);
             } else if (type == Types.BOOLEAN) {
@@ -426,6 +443,10 @@ public abstract class AbstractDatabasePlatform implements IDatabasePlatform {
 
         return objectValue;
 
+    }
+    
+    protected Object parseFloat(String value) {
+        return parseBigDecimal(value);
     }
     
     protected Object parseBigDecimal(String value) {
@@ -585,6 +606,44 @@ public abstract class AbstractDatabasePlatform implements IDatabasePlatform {
         }
     }
     
+    @Override
+    public Map<String, String> parseQualifiedTableName(String tableName) {
+                
+        Map<String, String> tableNameParts = new LinkedHashMap<String, String>();
+        if (StringUtils.isEmpty(tableName)) {
+            return tableNameParts;
+        }
+        
+        String[] initialSplit = tableName.split(Pattern.quote(getDatabaseInfo().getCatalogSeparator()));
+        if (initialSplit.length == 0) {
+            initialSplit = new String[] {tableName};
+        }
+        List<String> nameComponents = new ArrayList<String>();
+        for (String part : initialSplit) {
+            String[] subParts = part.split(Pattern.quote(getDatabaseInfo().getSchemaSeparator()));
+            if (subParts.length == 0) {
+                subParts = new String[] {part};
+            }
+            for (String subPart : subParts) { 
+                if (!StringUtils.isEmpty(subPart)) {                    
+                    nameComponents.add(subPart);
+                }
+            }
+        }
+        
+        if (nameComponents.size() >= 3) {
+            tableNameParts.put("catalog", nameComponents.get(0));
+            tableNameParts.put("schema", nameComponents.get(1));
+            tableNameParts.put("table", nameComponents.get(2));
+        } else if (nameComponents.size() == 2) {
+            tableNameParts.put("schema", nameComponents.get(0));
+            tableNameParts.put("table", nameComponents.get(1));            
+        } else {
+            tableNameParts.put("table", nameComponents.get(0));
+        }
+        
+        return tableNameParts;
+    }
 
     public Table makeAllColumnsPrimaryKeys(Table table) {
     	Table result = table.copy();

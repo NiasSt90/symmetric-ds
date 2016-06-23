@@ -20,6 +20,7 @@
  */
 package org.jumpmind.db.sql;
 
+import static org.apache.commons.lang.StringUtils.isNotBlank;
 import static org.jumpmind.db.model.ColumnTypes.ORACLE_TIMESTAMPLTZ;
 import static org.jumpmind.db.model.ColumnTypes.ORACLE_TIMESTAMPTZ;
 
@@ -92,10 +93,15 @@ public class JdbcSqlTemplate extends AbstractSqlTemplate implements ISqlTemplate
     public JdbcSqlTemplate(DataSource dataSource, SqlTemplateSettings settings,
             SymmetricLobHandler lobHandler, DatabaseInfo databaseInfo) {
         this.dataSource = dataSource;
-        this.settings = settings == null ? new SqlTemplateSettings() : settings;
+        settings = settings == null ? new SqlTemplateSettings() : settings;
+        this.settings = settings;
         this.lobHandler = lobHandler == null ? new SymmetricLobHandler(new DefaultLobHandler())
                 : lobHandler;
-        this.isolationLevel = databaseInfo.getMinIsolationLevelToPreventPhantomReads();
+        if (settings.getOverrideIsolationLevel() >= 0) {
+            this.isolationLevel = settings.getOverrideIsolationLevel();
+        } else {
+            this.isolationLevel = databaseInfo.getMinIsolationLevelToPreventPhantomReads();
+        }
     }
 
     protected Connection getConnection() throws SQLException {
@@ -124,8 +130,12 @@ public class JdbcSqlTemplate extends AbstractSqlTemplate implements ISqlTemplate
 
     public <T> ISqlReadCursor<T> queryForCursor(String sql, ISqlRowMapper<T> mapper, Object[] args,
             int[] types) {
-        logSql(sql, args);
-        return new JdbcSqlReadCursor<T>(this, mapper, sql, args, types);
+        long startTime = System.currentTimeMillis();
+        ISqlReadCursor<T> cursor = new JdbcSqlReadCursor<T>(this, mapper, sql, args, types);
+        long endTime = System.currentTimeMillis();
+        logSqlBuilder.logSql(log, sql, args, types, (endTime-startTime));
+        
+        return cursor;
     }
 
     public int getIsolationLevel() {
@@ -137,20 +147,27 @@ public class JdbcSqlTemplate extends AbstractSqlTemplate implements ISqlTemplate
     }
 
     public <T> T queryForObject(final String sql, final Class<T> clazz, final Object... args) {
-        logSql(sql, args);
         return execute(new IConnectionCallback<T>() {
             public T execute(Connection con) throws SQLException {
                 T result = null;
                 PreparedStatement ps = null;
                 ResultSet rs = null;
+                String expandedSql = expandSql(sql, args);
                 try {
-                    ps = con.prepareStatement(expandSql(sql, args));
+                    ps = con.prepareStatement(expandedSql);
                     ps.setQueryTimeout(settings.getQueryTimeout());
                     setValues(ps, expandArgs(sql, args));
+                    
+                    long startTime = System.currentTimeMillis();
                     rs = ps.executeQuery();
+                    long endTime = System.currentTimeMillis();
+                    logSqlBuilder.logSql(log, expandedSql, args, null, (endTime-startTime));
+                    
                     if (rs.next()) {
                         result = getObjectFromResultSet(rs, clazz);
                     }
+                } catch (SQLException e) {
+                    throw logSqlBuilder.logSqlAfterException(log, expandedSql, args, e);
                 } finally {
                     close(rs);
                     close(ps);
@@ -167,7 +184,7 @@ public class JdbcSqlTemplate extends AbstractSqlTemplate implements ISqlTemplate
 
     public byte[] queryForBlob(final String sql, final int jdbcTypeCode, final String jdbcTypeName,
             final Object... args) {
-        logSql(sql, args);
+        
         return execute(new IConnectionCallback<byte[]>() {
             public byte[] execute(Connection con) throws SQLException {
                 if (lobHandler.needsAutoCommitFalseForBlob(jdbcTypeCode, jdbcTypeName)) {
@@ -180,10 +197,15 @@ public class JdbcSqlTemplate extends AbstractSqlTemplate implements ISqlTemplate
                     ps = con.prepareStatement(sql);
                     ps.setQueryTimeout(settings.getQueryTimeout());
                     setValues(ps, args);
+                    long startTime = System.currentTimeMillis();
                     rs = ps.executeQuery();
+                    long endTime = System.currentTimeMillis();
+                    logSqlBuilder.logSql(log, sql, args, null, (endTime-startTime));
                     if (rs.next()) {
                         result = lobHandler.getBlobAsBytes(rs, 1, jdbcTypeCode, jdbcTypeName);
                     }
+                } catch (SQLException e) {
+                    throw logSqlBuilder.logSqlAfterException(log, sql, args, e);
                 } finally {
                     if (lobHandler.needsAutoCommitFalseForBlob(jdbcTypeCode, jdbcTypeName)
                             && con != null) {
@@ -203,7 +225,6 @@ public class JdbcSqlTemplate extends AbstractSqlTemplate implements ISqlTemplate
     }
 
     public String queryForClob(final String sql, final int jdbcTypeCode, final String jdbcTypeName, final Object... args) {
-        logSql(sql, args);
         return execute(new IConnectionCallback<String>() {
             public String execute(Connection con) throws SQLException {
                 String result = null;
@@ -213,10 +234,17 @@ public class JdbcSqlTemplate extends AbstractSqlTemplate implements ISqlTemplate
                     ps = con.prepareStatement(sql);
                     ps.setQueryTimeout(settings.getQueryTimeout());
                     setValues(ps, args);
+                    
+                    long startTime = System.currentTimeMillis();
                     rs = ps.executeQuery();
+                    long endTime = System.currentTimeMillis();
+                    logSqlBuilder.logSql(log, sql, args, null, (endTime-startTime));
+                    
                     if (rs.next()) {
                         result = lobHandler.getClobAsString(rs, 1, jdbcTypeCode, jdbcTypeName);
                     }
+                } catch (SQLException e) {
+                    throw logSqlBuilder.logSqlAfterException(log, sql, args, e);
                 } finally {
                     close(rs);
                     close(ps);
@@ -227,7 +255,6 @@ public class JdbcSqlTemplate extends AbstractSqlTemplate implements ISqlTemplate
     }
 
     public Map<String, Object> queryForMap(final String sql, final Object... args) {
-        logSql(sql, args);
         return execute(new IConnectionCallback<Map<String, Object>>() {
             public Map<String, Object> execute(Connection con) throws SQLException {
                 Map<String, Object> result = null;
@@ -239,7 +266,12 @@ public class JdbcSqlTemplate extends AbstractSqlTemplate implements ISqlTemplate
                     if (args != null && args.length > 0) {
                         setValues(ps, args);
                     }
+                    
+                    long startTime = System.currentTimeMillis();
                     rs = ps.executeQuery();
+                    long endTime = System.currentTimeMillis();
+                    logSqlBuilder.logSql(log, sql, args, null, (endTime-startTime));
+                    
                     if (rs.next()) {
                         ResultSetMetaData meta = rs.getMetaData();
                         int colCount = meta.getColumnCount();
@@ -281,6 +313,8 @@ public class JdbcSqlTemplate extends AbstractSqlTemplate implements ISqlTemplate
                             result.put(key, value);
                         }
                     }
+                } catch (SQLException e) {
+                    throw logSqlBuilder.logSqlAfterException(log, sql, args, e);
                 } finally {
                     close(rs);
                     close(ps);
@@ -299,7 +333,6 @@ public class JdbcSqlTemplate extends AbstractSqlTemplate implements ISqlTemplate
     }
 
     public int update(final String sql, final Object[] args, final int[] types) {
-        logSql(sql, args);
         return execute(new IConnectionCallback<Integer>() {
             public Integer execute(Connection con) throws SQLException {
                 if (args == null) {
@@ -307,8 +340,15 @@ public class JdbcSqlTemplate extends AbstractSqlTemplate implements ISqlTemplate
                     try {
                         stmt = con.createStatement();
                         stmt.setQueryTimeout(settings.getQueryTimeout());
+                        
+                        long startTime = System.currentTimeMillis();
                         stmt.execute(sql);
+                        long endTime = System.currentTimeMillis();
+                        logSqlBuilder.logSql(log, sql, args, types, (endTime-startTime));
+                        
                         return stmt.getUpdateCount();
+                    } catch (SQLException e) {
+                        throw logSqlBuilder.logSqlAfterException(log, sql, args, e);
                     } finally {
                         close(stmt);
                     }
@@ -323,8 +363,15 @@ public class JdbcSqlTemplate extends AbstractSqlTemplate implements ISqlTemplate
                         } else {
                             setValues(ps, args);
                         }
+
+                        long startTime = System.currentTimeMillis();
                         ps.execute();
+                        long endTime = System.currentTimeMillis();
+                        logSqlBuilder.logSql(log, sql, args, types, (endTime-startTime));
+                        
                         return ps.getUpdateCount();
+                    } catch (SQLException e) {
+                        throw logSqlBuilder.logSqlAfterException(log, sql, args, e);
                     } finally {
                         close(ps);
                     }
@@ -357,48 +404,50 @@ public class JdbcSqlTemplate extends AbstractSqlTemplate implements ISqlTemplate
                     int statementCount = 0;
                     for (String statement = source.readSqlStatement(); statement != null; statement = source
                             .readSqlStatement()) {
-                        logSql(statement, null);
-                        try {
-                            boolean hasResults = stmt.execute(statement);
-                            int updateCount = stmt.getUpdateCount();
-                            totalUpdateCount += updateCount;
-                            int rowsRetrieved = 0;
-                            if (hasResults) {
-                                ResultSet rs = null;
-                                try {
-                                    rs = stmt.getResultSet();
-                                    while (rs.next()) {
-                                        rowsRetrieved++;
+                        if (isNotBlank(statement)) {
+                            try {
+                                long startTime = System.currentTimeMillis();
+                                boolean hasResults = stmt.execute(statement);
+                                long endTime = System.currentTimeMillis();
+                                logSqlBuilder.logSql(log, statement, null, null, (endTime-startTime));
+                                
+                                int updateCount = stmt.getUpdateCount();
+                                totalUpdateCount += updateCount;
+                                int rowsRetrieved = 0;
+                                if (hasResults) {
+                                    ResultSet rs = null;
+                                    try {
+                                        rs = stmt.getResultSet();
+                                        while (rs.next()) {
+                                            rowsRetrieved++;
+                                        }
+                                    } finally {
+                                        close(rs);
                                     }
-                                } finally {
-                                    close(rs);
+                                }
+                                if (resultsListener != null) {
+                                    resultsListener.sqlApplied(statement, updateCount, rowsRetrieved, statementCount);
+                                }
+                                statementCount++;
+                                if (statementCount % commitRate == 0 && !autoCommit) {
+                                    con.commit();
+                                }
+                            } catch (SQLException ex) {
+                                boolean isDrop = statement.toLowerCase().trim().startsWith("drop");
+                                boolean isSequenceCreate = statement.toLowerCase().trim().startsWith("create sequence");
+                                if (resultsListener != null) {
+                                    resultsListener.sqlErrored(statement, translate(statement, ex), statementCount, isDrop, isSequenceCreate);
+                                }
+
+                                if ((isDrop && !failOnDrops) || (isSequenceCreate && !failOnSequenceCreate)) {
+                                    log.debug("{}.  Failed to execute: {}", ex.getMessage(), statement);
+                                } else {
+                                    log.warn("{}.  Failed to execute: {}", ex.getMessage(), statement);
+                                    if (failOnError) {
+                                        throw ex;
+                                    }
                                 }
                             }
-                            if (resultsListener != null) {
-                                resultsListener.sqlApplied(statement, updateCount, rowsRetrieved,
-                                        statementCount);
-                            }
-                            statementCount++;
-                            if (statementCount % commitRate == 0 && !autoCommit) {
-                                con.commit();
-                            }
-                        } catch (SQLException ex) {
-                            boolean isDrop = statement.toLowerCase().trim().startsWith("drop");
-                            boolean isSequenceCreate = statement.toLowerCase().trim().startsWith("create sequence");
-                            if (resultsListener != null) {
-                                resultsListener.sqlErrored(statement, translate(statement, ex),
-                                        statementCount, isDrop, isSequenceCreate);
-                            }
-
-                            if ((isDrop && !failOnDrops) || (isSequenceCreate && !failOnSequenceCreate)) {
-                                log.debug("{}.  Failed to execute: {}", ex.getMessage(), statement);
-                            } else {
-                                log.warn("{}.  Failed to execute: {}", ex.getMessage(), statement);
-                                if (failOnError) {
-                                    throw ex;
-                                }
-                            }
-
                         }
                     }
 

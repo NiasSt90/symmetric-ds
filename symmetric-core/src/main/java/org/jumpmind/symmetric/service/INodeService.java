@@ -43,6 +43,8 @@ import org.jumpmind.symmetric.model.NodeStatus;
 public interface INodeService {
 
     public Node findNode(String nodeId);
+    
+    public String getExternalId(String nodeId);
 
     public List<NodeHost> findNodeHosts(String nodeId);
 
@@ -184,4 +186,5 @@ public interface INodeService {
     public List<String> findOfflineNodeIds(long minutesOffline);
 
     public NetworkedNode getRootNetworkedNode();
+    
 }

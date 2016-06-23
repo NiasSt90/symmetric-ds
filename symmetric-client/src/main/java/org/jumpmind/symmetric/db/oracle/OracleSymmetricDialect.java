@@ -49,7 +49,7 @@ public class OracleSymmetricDialect extends AbstractSymmetricDialect implements 
 
     static final String SQL_SELECT_TRIGGERS = "from ALL_TRIGGERS where owner in (SELECT sys_context('USERENV', 'CURRENT_SCHEMA') FROM dual) and trigger_name like upper(?) and table_name like upper(?)";
 
-    static final String SQL_SELECT_TRANSACTIONS = "select min(start_time) from gv$transaction";
+    static final String SQL_SELECT_TRANSACTIONS = "select min(start_time) from gv$transaction where status = 'ACTIVE'";
 
     static final String SQL_OBJECT_INSTALLED = "select count(*) from user_source where line = 1 and (((type = 'FUNCTION' or type = 'PACKAGE') and name=upper('$(functionName)')) or (name||'_'||type=upper('$(functionName)')))" ;
     
@@ -303,6 +303,21 @@ public class OracleSymmetricDialect extends AbstractSymmetricDialect implements 
             return false;
         }
 
+    }
+
+    @Override
+    public Date getEarliestTransactionStartTime() {
+        Date date = null;
+        String returnValue = platform.getSqlTemplate().queryForObject(SQL_SELECT_TRANSACTIONS, String.class);
+        if (returnValue != null) {
+            try {
+                date = DateUtils.parseDate(returnValue, new String[] { "MM/dd/yy HH:mm:ss" });
+            } catch (ParseException e) {
+                log.error("", e);
+                date = new Date();
+            }
+        }
+        return date;
     }
 
     @Override
